@@ -1,0 +1,122 @@
+# Import all the libraries we need to run
+import sys
+import RPi.GPIO as GPIO
+import os
+from time import sleep
+import Adafruit_DHT
+import urllib.request
+import time
+import random
+import telepot
+import telebot
+from telepot.loop import MessageLoop
+from telebot import types
+
+
+
+
+
+GPIO.setmode(GPIO.BCM)
+# Setup the pins we are connect to
+DHTpin = 23
+
+# Setup GPIO for sensors
+led1= 24
+led2=25
+buzzer=18
+GPIO.setwarnings(False)
+GPIO.setup(led1,GPIO.OUT)
+GPIO.setup(led2,GPIO.OUT)
+GPIO.setup(buzzer,GPIO.OUT)
+
+
+#Setup our API, delay,telegram bot
+myAPI = "8LNYAYXP88TTRL6X"
+myDelay = 10 #how many seconds between posting data
+bot=telepot.Bot('778006231:AAGHTZBcGORxvv2QeSIC5jE62OuRnDHh1qc')
+
+#Get Sensor Data from Sensors
+def getSensorData():
+    print("In getSensorData")
+    RHW, TW = Adafruit_DHT.read_retry(Adafruit_DHT.DHT11, DHTpin)
+    
+    #Stimulate water temperature
+    UWT = int(random.uniform(20.0,30.0))
+   
+    # return dict
+    return (str(RHW), str(TW), str(UWT))
+
+
+#Setup Telebot reply function
+def action(msg):
+    
+    chat_id=msg['chat']['id']
+    text = msg['text'].lower()
+    print ('Received:%s' % text)
+    tb=telebot.TeleBot('778006231:AAGHTZBcGORxvv2QeSIC5jE62OuRnDHh1qc')
+    markup = types.ReplyKeyboardMarkup(row_width=2)
+    item1 = types.KeyboardButton('Status')
+    item2 = types.KeyboardButton('Live')
+    markup.add(item1,item2)
+    tb.send_message(chat_id,"Select 'Status' for system status; Enter 'Live' for visual status",reply_markup=markup)
+        
+    if 'status' in text:
+        RHW, TW, UWT = getSensorData()
+        bot.sendMessage(chat_id,"The Temperature is "+TW+"(C)"+"\nThe Temperature under water is "+UWT+("(C) \nThe Relative Humidity is "+ RHW+"%"))
+        
+    elif 'live' in text:
+        rand=random.random()
+        if rand>=0.65:
+            bot.sendPhoto(chat_id,photo=open('./fish.jpg','rb'))
+        else:
+            bot.sendPhoto(chat_id,photo=open('./atv.jpg','rb'))
+   
+    
+# main() function
+def main():
+
+    print('starting...')
+
+    baseURL = 'https://api.thingspeak.com/update?api_key=%s' % myAPI
+    print(baseURL)
+    
+    while True:
+        try:
+            
+            print("Reading Sensor Data")
+            RHW, TW, UWT = getSensorData()
+            print(time.asctime(time.localtime(time.time())))  
+            f = urllib.request.urlopen(baseURL + "&field1=%s&field2=%s&field3=%s&" % (TW, UWT, RHW))            
+            print ("The Room Temperature is "+TW+"(C)")
+            print ("The Temperature under water is "+UWT+"(C)")
+            print ("The Releative Humidity is "+ RHW+ "%")
+            
+
+            if int(UWT)<23 :
+                bot.sendMessage(250837415,time.asctime(time.localtime(time.time())))
+                bot.sendMessage(250837415,"Water Temperature Too Low;Initiating Heater")
+                i=5
+                while i != 0:
+                   GPIO.output(led1,1)
+                   GPIO.output(led2,0)
+                   GPIO.output(buzzer,GPIO.HIGH)
+                   time.sleep(1)
+                   GPIO.output(led2,1)
+                   GPIO.output(led1,0)
+                   GPIO.output(buzzer,GPIO.LOW)
+                   time.sleep(1)
+                   i=i-1
+     
+            f.close()
+
+        except:
+            print('exiting.')
+            break
+
+        sleep(int(myDelay))
+
+# call main
+
+if __name__ == '__main__':
+    MessageLoop(bot, action).run_as_thread()
+    main()
